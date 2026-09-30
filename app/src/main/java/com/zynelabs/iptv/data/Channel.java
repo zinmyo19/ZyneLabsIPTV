@@ -20,6 +20,11 @@ public class Channel {
     public int streamId = 0;
     public String container = "";
 
+    // Stalker portal extras (resolved to a fresh URL at play time)
+    public String stalkerPortal = "";
+    public String stalkerMac = "";
+    public String stalkerCmd = "";
+
     public String displayGroup() {
         return (group == null || group.isEmpty()) ? "Ungrouped" : group;
     }
