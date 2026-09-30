@@ -2,14 +2,15 @@ package com.zynelabs.iptv.data;
 
 import org.json.JSONObject;
 
-/** A playlist account: M3U link, M3U file, or Xtream Codes login. */
+/** A playlist account: M3U link, M3U file, Xtream Codes login, or Stalker portal. */
 public class PlAccount {
     public String id;
     public String name;
-    public String type;   // "m3u_url" | "m3u_file" | "xtream"
-    public String url;    // m3u link
+    public String type;   // "m3u_url" | "m3u_file" | "xtream" | "stalker"
+    public String url;    // m3u link or stalker portal url
     public String file;   // internal filename for m3u file
     public String server, user, pass; // xtream
+    public String mac;    // stalker portal MAC
 
     public PlAccount() {}
 
@@ -23,6 +24,7 @@ public class PlAccount {
         a.server = o.optString("server", "");
         a.user = o.optString("user", "");
         a.pass = o.optString("pass", "");
+        a.mac = o.optString("mac", "");
         return a;
     }
 
@@ -32,9 +34,12 @@ public class PlAccount {
             o.put("id", id); o.put("name", name); o.put("type", type);
             o.put("url", url); o.put("file", file);
             o.put("server", server); o.put("user", user); o.put("pass", pass);
+            o.put("mac", mac);
         } catch (Exception ignored) {}
         return o;
     }
 
     public boolean isXtream() { return "xtream".equals(type); }
+
+    public boolean isStalker() { return "stalker".equals(type); }
 }
