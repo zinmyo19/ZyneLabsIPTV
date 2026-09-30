@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.zynelabs.iptv">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@drawable/ic_launcher"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="true"
+        android:allowBackup="true">
+        <activity android:name=".ui.SetupActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".ui.HomeActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".ui.SectionsActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".ui.EpgActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".ui.SettingsActivity"
+            android:exported="false" />
+        <activity android:name=".ui.PlayerActivity"
+            android:exported="false"
+            android:supportsPictureInPicture="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden" />
+        <activity android:name=".ui.MediaLibraryActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+    </application>
+</manifest>
