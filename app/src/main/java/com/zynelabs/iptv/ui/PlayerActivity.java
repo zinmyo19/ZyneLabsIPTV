@@ -59,6 +59,7 @@ public class PlayerActivity extends Activity {
     private Handler handler = new Handler();
     private boolean isVod = false;
     private boolean controlsVisible = true;
+    private boolean resolvingLink = false; // stalker create_link in flight
     private Runnable sleepTask = null;
     private Runnable hideTask = new Runnable() {
         @Override public void run() { setControls(false); }
@@ -759,6 +760,34 @@ public class PlayerActivity extends Activity {
     private void playCurrent() {
         final Channel c = PlayerQueue.current();
         if (c == null) { finish(); return; }
+        // Stalker portal channels need a fresh stream URL per play (create_link).
+        if (c.stalkerCmd != null && !c.stalkerCmd.isEmpty() && !resolvingLink) {
+            resolvingLink = true;
+            spinner.setVisibility(View.VISIBLE);
+            errText.setText("Resolving stream…");
+            new Thread(new Runnable() {
+                @Override public void run() {
+                    try {
+                        c.url = com.zynelabs.iptv.data.StalkerClient.resolve(c);
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                resolvingLink = false;
+                                playCurrent();
+                            }
+                        });
+                    } catch (final Exception e) {
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                resolvingLink = false;
+                                spinner.setVisibility(View.GONE);
+                                errText.setText("Stream failed: " + e.getMessage());
+                            }
+                        });
+                    }
+                }
+            }).start();
+            return;
+        }
         titleText.setText(c.name);
         posText.setText(PlayerQueue.position());
         ImageLoader.load(c.logo, logoView, android.R.drawable.ic_media_play);
