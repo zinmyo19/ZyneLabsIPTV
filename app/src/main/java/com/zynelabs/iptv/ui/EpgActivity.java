@@ -44,7 +44,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
 
-/** OTT-style TV guide: timeline grid of programmes for Xtream live channels. */
+/** OTT-style TV guide: timeline grid of programmes for live channels. */
 public class EpgActivity extends Activity {
 
     private static final int ROW_H_DP = 64;
@@ -58,7 +58,14 @@ public class EpgActivity extends Activity {
     private long winStart, winEnd; // visible window (ms)
 
     private ProgressBar loading;
-    private TextView statusText, dateText;
+    private TextView statusText, dateText, clockText;
+    private android.os.Handler clockHandler = new android.os.Handler();
+    private Runnable clockTick = new Runnable() {
+        @Override public void run() {
+            updateGuideClock();
+            clockHandler.postDelayed(this, 30000);
+        }
+    };
     private LinearLayout chanCol;      // left fixed channel column
     private LinearLayout hourRow;      // top hour labels (inside headerHsv)
     private FrameLayout gridFrame;     // rows + now-line
@@ -77,8 +84,8 @@ public class EpgActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         acc = new Store(this).account(getIntent().getStringExtra("accountId"));
-        if (acc == null || !acc.isXtream()) {
-            Toast.makeText(this, "Guide needs an Xtream playlist", Toast.LENGTH_SHORT).show();
+        if (acc == null) {
+            Toast.makeText(this, "No playlist selected", Toast.LENGTH_SHORT).show();
             finish();
             return;
         }
@@ -86,7 +93,21 @@ public class EpgActivity extends Activity {
         winStart = now - 30L * 60 * 1000;
         winEnd = now + 4L * 60 * 60 * 1000;
         build();
+        updateGuideClock();
+        clockHandler.postDelayed(clockTick, 30000);
         load();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        clockHandler.removeCallbacks(clockTick);
+    }
+
+    private void updateGuideClock() {
+        if (clockText == null) return;
+        java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("HH:mm", Locale.US);
+        clockText.setText("\uD83D\uDD52 " + f.format(new Date()));
     }
 
     // ---------------- UI ----------------
@@ -117,6 +138,12 @@ public class EpgActivity extends Activity {
         top.addView(title);
         dateText = Ui.label(this, "", 12, Ui.MUTED, false);
         top.addView(dateText);
+        clockText = Ui.label(this, "", 13, Ui.TEAL, true);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clp.setMargins(Ui.dp(this, 8), 0, Ui.dp(this, 4), 0);
+        clockText.setLayoutParams(clp);
+        top.addView(clockText);
         Button prev = Ui.circleBtn(this, "‹", 15);
         prev.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { shift(-3); }
@@ -252,15 +279,14 @@ public class EpgActivity extends Activity {
                 live = l;
                 new Thread(new Runnable() {
                     @Override public void run() {
-                        final boolean ok = fetchGuide();
+                        // Programme data is only available for Xtream providers (xmltv.php).
+                        // Other sources still get the channel list with name + logo.
+                        final boolean ok = acc.isXtream() && fetchGuide();
                         runOnUiThread(new Runnable() {
                             @Override public void run() {
                                 loading.setVisibility(View.GONE);
-                                if (!ok) {
-                                    statusText.setText("No guide data for this provider.");
-                                    return;
-                                }
-                                statusText.setText("");
+                                statusText.setText(ok ? ""
+                                        : "No programme data — showing channels only.");
                                 View bd = getBodyByTag();
                                 if (bd != null) bd.setVisibility(View.VISIBLE);
                                 render();
@@ -441,9 +467,11 @@ public class EpgActivity extends Activity {
             strip.setLayoutParams(new LinearLayout.LayoutParams(
                     totalW, rowH));
             List<Prog> progs = guide.get(key);
+            boolean drew = false;
             if (progs != null) {
                 for (final Prog pg : progs) {
                     if (pg.stop <= winStart || pg.start >= winEnd) continue;
+                    drew = true;
                     long s = Math.max(pg.start, winStart);
                     long e = Math.min(pg.stop, winEnd);
                     int x = (int) ((s - winStart) / 60000) * Ui.dp(this, PX_PER_MIN);
@@ -468,6 +496,16 @@ public class EpgActivity extends Activity {
                     strip.addView(blk);
                 }
             }
+            if (!drew) {
+                TextView ph = new TextView(this);
+                ph.setText("No programme info");
+                ph.setTextSize(11);
+                ph.setTextColor(Ui.MUTED);
+                ph.setGravity(Gravity.CENTER_VERTICAL);
+                ph.setPadding(Ui.dp(this, 8), 0, 0, 0);
+                strip.addView(ph, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, rowH - Ui.dp(this, 8)));
+            }
             rowsBox.addView(strip);
             View div2 = new View(this);
             div2.setBackgroundColor(0x22000000);
@@ -476,18 +514,31 @@ public class EpgActivity extends Activity {
             rowsBox.addView(div2);
         }
 
-        // now-line
+        // now-line + time label
         long now = System.currentTimeMillis();
         if (now >= winStart && now <= winEnd) {
+            int x = (int) ((now - winStart) / 60000) * Ui.dp(this, PX_PER_MIN);
             View line = new View(this);
             line.setTag("nowline");
             line.setBackgroundColor(Ui.RED);
-            int x = (int) ((now - winStart) / 60000) * Ui.dp(this, PX_PER_MIN);
             FrameLayout.LayoutParams llp = new FrameLayout.LayoutParams(
                     Ui.dp(this, 3), ViewGroup.LayoutParams.MATCH_PARENT);
             llp.leftMargin = x;
             line.setLayoutParams(llp);
             gridFrame.addView(line);
+            TextView nowTv = new TextView(this);
+            nowTv.setTag("nowline");
+            java.text.SimpleDateFormat nf = new java.text.SimpleDateFormat("HH:mm", Locale.US);
+            nowTv.setText("NOW " + nf.format(new Date(now)));
+            nowTv.setTextSize(10);
+            nowTv.setTextColor(0xFFFFFFFF);
+            nowTv.setBackgroundColor(Ui.RED);
+            nowTv.setPadding(Ui.dp(this, 6), Ui.dp(this, 2), Ui.dp(this, 6), Ui.dp(this, 2));
+            FrameLayout.LayoutParams nlp = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            nlp.leftMargin = x + Ui.dp(this, 5);
+            nowTv.setLayoutParams(nlp);
+            gridFrame.addView(nowTv);
         }
 
         // date label + scroll to now
