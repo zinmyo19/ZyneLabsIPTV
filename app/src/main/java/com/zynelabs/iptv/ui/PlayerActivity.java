@@ -768,11 +768,12 @@ public class PlayerActivity extends Activity {
             new Thread(new Runnable() {
                 @Override public void run() {
                     try {
-                        c.url = com.zynelabs.iptv.data.StalkerClient.resolve(c);
+                        final String url = com.zynelabs.iptv.data.StalkerClient.resolve(c);
                         runOnUiThread(new Runnable() {
                             @Override public void run() {
                                 resolvingLink = false;
-                                playCurrent();
+                                c.url = url;
+                                startPlayback(c);
                             }
                         });
                     } catch (final Exception e) {
@@ -788,6 +789,11 @@ public class PlayerActivity extends Activity {
             }).start();
             return;
         }
+        startPlayback(c);
+    }
+
+    /** Begin ExoPlayer playback for a channel whose stream URL is ready. */
+    private void startPlayback(final Channel c) {
         titleText.setText(c.name);
         posText.setText(PlayerQueue.position());
         ImageLoader.load(c.logo, logoView, android.R.drawable.ic_media_play);
