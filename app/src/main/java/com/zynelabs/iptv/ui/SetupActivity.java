@@ -99,6 +99,13 @@ public class SetupActivity extends Activity {
             @Override public void onClick(View v) { dlgXtream(); }
         });
         tileRow.addView(bXtream);
+
+        LinearLayout bStalker = Ui.tileButton(this, "📡", "Stalker");
+        bStalker.setLayoutParams(tileLp());
+        bStalker.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { dlgStalker(); }
+        });
+        tileRow.addView(bStalker);
         root.addView(tileRow);
         root.addView(Ui.spacer(this, 10));
 
@@ -151,7 +158,8 @@ public class SetupActivity extends Activity {
 
             row.addView(Ui.label(this, a.name, 16, Ui.INK, true));
             String kind = "m3u_url".equals(a.type) ? "M3U Link"
-                    : "m3u_file".equals(a.type) ? "M3U File" : "Xtream Codes";
+                    : "m3u_file".equals(a.type) ? "M3U File"
+                    : "stalker".equals(a.type) ? "Stalker Portal" : "Xtream Codes";
             row.addView(Ui.label(this, kind, 12, Ui.MUTED, false));
             row.setFocusable(true);
             row.setOnClickListener(new View.OnClickListener() {
@@ -306,6 +314,63 @@ public class SetupActivity extends Activity {
                                             @Override public void run() { toast("Login failed — check details"); }
                                         });
                                     }
+                                } catch (final Exception e) {
+                                    runOnUiThread(new Runnable() {
+                                        @Override public void run() { toast("Connection failed"); }
+                                    });
+                                }
+                            }
+                        }).start();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    // ---------- Stalker portal ----------
+    private void dlgStalker() {
+        LinearLayout f = new LinearLayout(this);
+        f.setOrientation(LinearLayout.VERTICAL);
+        int p = Ui.dp(this, 8);
+        f.setPadding(p, p, p, p);
+        final EditText name = Ui.field(this, "Name (e.g. My Portal)");
+        final EditText portal = Ui.field(this, "Portal URL (http://host:port/c)");
+        final EditText mac = Ui.field(this, "MAC (00:1A:79:XX:XX:XX)");
+        f.addView(name);
+        f.addView(Ui.spacer(this, 8));
+        f.addView(portal);
+        f.addView(Ui.spacer(this, 8));
+        f.addView(mac);
+        new AlertDialog.Builder(this)
+                .setTitle("Stalker Portal Login")
+                .setView(f)
+                .setPositiveButton("Connect", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface d, int w) {
+                        final String pu = portal.getText().toString().trim();
+                        final String mc = mac.getText().toString().trim().toUpperCase();
+                        if (pu.isEmpty() || mc.isEmpty()) { toast("Fill portal + MAC"); return; }
+                        if (!com.zynelabs.iptv.data.StalkerClient.validMac(mc)) {
+                            toast("MAC looks wrong (00:1A:79:…)");
+                            return;
+                        }
+                        toast("Connecting…");
+                        new Thread(new Runnable() {
+                            @Override public void run() {
+                                try {
+                                    com.zynelabs.iptv.data.StalkerClient.session(pu, mc);
+                                    final PlAccount a = new PlAccount();
+                                    String nm = name.getText().toString().trim();
+                                    a.name = nm.isEmpty() ? "Stalker Portal" : nm;
+                                    a.type = "stalker";
+                                    a.url = com.zynelabs.iptv.data.StalkerClient.normPortal(pu);
+                                    a.mac = mc;
+                                    runOnUiThread(new Runnable() {
+                                        @Override public void run() {
+                                            store.addAccount(a);
+                                            refreshList();
+                                            open(a);
+                                        }
+                                    });
                                 } catch (final Exception e) {
                                     runOnUiThread(new Runnable() {
                                         @Override public void run() { toast("Connection failed"); }
