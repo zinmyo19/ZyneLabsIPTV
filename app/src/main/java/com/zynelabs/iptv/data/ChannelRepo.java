@@ -30,6 +30,8 @@ public class ChannelRepo {
                         splitM3u(M3uParser.parse(XtreamClient.httpGet(acc.url)), live, vod);
                     } else if ("m3u_file".equals(acc.type)) {
                         splitM3u(M3uParser.parse(readFile(ctx, acc.file)), live, vod);
+                    } else if ("stalker".equals(acc.type)) {
+                        live = StalkerClient.channels(acc.url, acc.mac);
                     } else {
                         live = XtreamClient.live(acc.server, acc.user, acc.pass);
                         vod = XtreamClient.vod(acc.server, acc.user, acc.pass);
