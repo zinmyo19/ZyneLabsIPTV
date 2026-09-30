@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="paper">#0C0906</color>
+    <color name="card">#17100A</color>
+    <color name="card2">#20150C</color>
+    <color name="teal">#FFAA33</color>
+    <color name="teal_dark">#7A4A1E</color>
+    <color name="gold">#00E5FF</color>
+    <color name="red">#FF5A4E</color>
+    <color name="ink">#F5EDE0</color>
+    <color name="muted">#A89A86</color>
+</resources>
