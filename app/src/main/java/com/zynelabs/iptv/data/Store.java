@@ -110,4 +110,8 @@ public class Store {
     // player buffer size in seconds (user-adjustable, like OTT Navigator)
     public int bufferSecs() { return sp.getInt("buffer_secs", 90); }
     public void setBufferSecs(int s) { sp.edit().putInt("buffer_secs", s).apply(); }
+
+    // video scale mode (OTT-style zoom 70%–140%, user-adjustable)
+    public float videoScale() { return sp.getFloat("video_scale", 1.0f); }
+    public void setVideoScale(float s) { sp.edit().putFloat("video_scale", s).apply(); }
 }
