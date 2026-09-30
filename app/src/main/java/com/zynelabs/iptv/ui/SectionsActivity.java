@@ -82,17 +82,15 @@ public class SectionsActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         title.setLayoutParams(tlp);
         top.addView(title);
-        if (acc.isXtream()) {
-            Button epgBtn = Ui.barBtn(this, "📅", 18);
-            epgBtn.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) {
-                    Intent i = new Intent(SectionsActivity.this, EpgActivity.class);
-                    i.putExtra("accountId", acc.id);
-                    startActivity(i);
-                }
-            });
-            top.addView(epgBtn);
-        }
+        Button epgBtn = Ui.barBtn(this, "📅", 18);
+        epgBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                Intent i = new Intent(SectionsActivity.this, EpgActivity.class);
+                i.putExtra("accountId", acc.id);
+                startActivity(i);
+            }
+        });
+        top.addView(epgBtn);
         Button setBtn = Ui.barBtn(this, "⚙", 20);
         setBtn.setTextColor(Ui.MUTED);
         setBtn.setOnClickListener(new View.OnClickListener() {
