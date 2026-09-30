@@ -82,6 +82,7 @@ public class PlayerActivity extends Activity {
     private Button aspectBtn;
     private AudioManager audioManager;
     private int aspectMode = 0; // 0=Fit 1=Fill 2=Zoom
+    private float videoScale = 1.0f; // OTT-style video scale mode (0.7–1.4)
     private static final String[] ASPECT_NAMES = {"Fit", "Fill", "Zoom"};
     private int videoW = 0, videoH = 0;
     private float downX, downY;
@@ -116,6 +117,7 @@ public class PlayerActivity extends Activity {
         Channel c = PlayerQueue.current();
         if (c == null || c.url == null || c.url.isEmpty()) { finish(); return; }
         isVod = c.kind != Channel.LIVE;
+        videoScale = new Store(this).videoScale();
         buildPlayer();
         build();
         enterFullscreen();
@@ -325,6 +327,9 @@ public class PlayerActivity extends Activity {
         aspectBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { cycleAspect(); }
         });
+        aspectBtn.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override public boolean onLongClick(View v) { showScaleDialog(); return true; }
+        });
         bottomBar.addView(aspectBtn);
         Button subBtn = Ui.circleBtn(this, "💬", 15);
         subBtn.setOnClickListener(new View.OnClickListener() {
@@ -455,8 +460,35 @@ public class PlayerActivity extends Activity {
     private void cycleAspect() {
         aspectMode = (aspectMode + 1) % 3;
         layoutSurface();
-        showHint("⭐", "Aspect: " + ASPECT_NAMES[aspectMode]);
+        showHint("⭐", "Aspect: " + ASPECT_NAMES[aspectMode]
+                + "  •  Scale: " + Math.round(videoScale * 100) + "% (hold ⛶ to change)");
         scheduleHide();
+    }
+
+    /** OTT-style video scale mode: 70%–140% zoom applied on top of the aspect mode. */
+    private void showScaleDialog() {
+        final int n = 15; // 70% .. 140% in 5% steps
+        final String[] labels = new String[n];
+        final float[] vals = new float[n];
+        int checked = 6; // 100%
+        for (int i = 0; i < n; i++) {
+            vals[i] = 0.70f + i * 0.05f;
+            labels[i] = Math.round(vals[i] * 100) + "%";
+            if (Math.abs(vals[i] - videoScale) < 0.001f) checked = i;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Video scale mode")
+                .setSingleChoiceItems(labels, checked, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int which) {
+                        videoScale = vals[which];
+                        new Store(PlayerActivity.this).setVideoScale(videoScale);
+                        layoutSurface();
+                        showHint("🔍", "Scale: " + labels[which]);
+                        d.dismiss();
+                    }
+                })
+                .setNegativeButton("Close", null)
+                .show();
     }
 
     private void layoutSurface() {
@@ -485,6 +517,10 @@ public class PlayerActivity extends Activity {
                 if (vr > cr) { h = ch; w = (int) (ch * vr); }
                 else { w = cw; h = (int) (cw / vr); }
             }
+            // video scale mode (OTT-style): zoom the fitted surface; the
+            // parent clips the overflow so it behaves like crop-zoom
+            w = Math.max(1, (int) (w * videoScale));
+            h = Math.max(1, (int) (h * videoScale));
             lp = new FrameLayout.LayoutParams(w, h, Gravity.CENTER);
         }
         surface.setLayoutParams(lp);
