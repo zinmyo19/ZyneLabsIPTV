@@ -38,6 +38,8 @@ public class SeriesDialog {
                         List<String> labels = new ArrayList<>();
                         for (XtreamClient.Episode e : eps) labels.add(e.label);
                         ListView lv = new ListView(act);
+                        lv.setSelector(Ui.listSelector(act));
+                        lv.setDrawSelectorOnTop(true);
                         lv.setAdapter(new ArrayAdapter<>(act,
                                 android.R.layout.simple_list_item_1, labels));
                         new AlertDialog.Builder(act)
