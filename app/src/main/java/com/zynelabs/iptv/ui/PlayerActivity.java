@@ -59,6 +59,7 @@ public class PlayerActivity extends Activity {
     private ImageView logoView;
     private Button playBtn;
     private SeekBar seek;
+    private Button seekBackBtn, seekFwdBtn;
     private Handler handler = new Handler();
     private boolean isVod = false;
     private boolean controlsVisible = true;
@@ -330,10 +331,32 @@ public class PlayerActivity extends Activity {
             @Override public void onClick(View v) { zap(true); }
         });
         bottomBar.addView(nextCh);
+        // ±10s seek buttons (VOD / media library only — live has no timeline)
+        seekBackBtn = Ui.flatBtn(this, "⏪", 15);
+        seekBackBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (player != null)
+                    player.seekTo(Math.max(0, player.getCurrentPosition() - 10_000));
+            }
+        });
+        seekBackBtn.setVisibility(isVod ? View.VISIBLE : View.GONE);
+        bottomBar.addView(seekBackBtn);
+        seekFwdBtn = Ui.flatBtn(this, "⏩", 15);
+        seekFwdBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (player != null) {
+                    long d = player.getDuration();
+                    long np = player.getCurrentPosition() + 10_000;
+                    player.seekTo(d > 0 && d != C.TIME_UNSET ? Math.min(np, d) : np);
+                }
+            }
+        });
+        seekFwdBtn.setVisibility(isVod ? View.VISIBLE : View.GONE);
+        bottomBar.addView(seekFwdBtn);
         seek = new SeekBar(this);
         LinearLayout.LayoutParams sklp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         seek.setLayoutParams(sklp);
-        seek.setVisibility(isVod ? View.VISIBLE : View.GONE);
+        updateVodUi();
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar s, int pr, boolean fromUser) {
                 if (fromUser && player != null) {
@@ -709,7 +732,7 @@ public class PlayerActivity extends Activity {
         int idx = full.indexOf(c);
         PlayerQueue.set(full, Math.max(0, idx));
         isVod = c.kind != Channel.LIVE;
-        seek.setVisibility(isVod ? View.VISIBLE : View.GONE);
+        updateVodUi();
         chanDrawer.setVisibility(View.GONE);
         setControls(true);
         playCurrent();
@@ -997,7 +1020,7 @@ public class PlayerActivity extends Activity {
         catchupMode = true;
         catchupChan = cu;
         isVod = true;
-        seek.setVisibility(View.VISIBLE);
+        updateVodUi();
         startPlayback(cu);
         showHint("\uD83D\uDCFC", pr.title);
         Toast.makeText(this, "📼 Catch-up — tap 📼 again for live",
@@ -1011,7 +1034,7 @@ public class PlayerActivity extends Activity {
         Channel live = PlayerQueue.current();
         if (live == null) return;
         isVod = false;
-        seek.setVisibility(View.GONE);
+        updateVodUi();
         playCurrent();
         Toast.makeText(this, "🔴 Back to live", Toast.LENGTH_SHORT).show();
     }
@@ -1063,7 +1086,7 @@ public class PlayerActivity extends Activity {
             PlayerQueue.playSingle(c);
         }
         isVod = PlayerQueue.current().kind != Channel.LIVE;
-        seek.setVisibility(isVod ? View.VISIBLE : View.GONE);
+        updateVodUi();
         playCurrent();
         showHint("🔢", n + " · " + dispName(c));
     }
@@ -1316,6 +1339,14 @@ public class PlayerActivity extends Activity {
         handler.postDelayed(hideTask, 3500);
     }
 
+    /** Show/hide the VOD-only timeline controls (seekbar + ±10s buttons). */
+    private void updateVodUi() {
+        int v = isVod ? View.VISIBLE : View.GONE;
+        if (seek != null) seek.setVisibility(v);
+        if (seekBackBtn != null) seekBackBtn.setVisibility(v);
+        if (seekFwdBtn != null) seekFwdBtn.setVisibility(v);
+    }
+
     private void zap(boolean next) {
         if (!PlayerQueue.hasMultiple()) {
             Toast.makeText(this, "Single item", Toast.LENGTH_SHORT).show();
@@ -1323,7 +1354,7 @@ public class PlayerActivity extends Activity {
         }
         if (next) PlayerQueue.next(); else PlayerQueue.prev();
         isVod = PlayerQueue.current().kind != Channel.LIVE;
-        seek.setVisibility(isVod ? View.VISIBLE : View.GONE);
+        updateVodUi();
         setControls(true);
         playCurrent();
     }
