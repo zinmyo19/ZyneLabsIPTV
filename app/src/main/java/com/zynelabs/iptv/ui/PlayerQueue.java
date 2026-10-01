@@ -50,4 +50,42 @@ public class PlayerQueue {
     public static String position() {
         return list.isEmpty() ? "" : ((pos + 1) + " / " + list.size());
     }
+
+    // ---------------- OTT-style channel numbers ----------------
+    // Number = 1-based position in the account's canonical live list
+    // (provider order), stable across filters/search.
+    public static int numberOf(Channel c) {
+        if (c == null) return -1;
+        List<Channel> f = full();
+        for (int i = 0; i < f.size(); i++) {
+            if (c.key.equals(f.get(i).key)) return i + 1;
+        }
+        return -1;
+    }
+
+    public static Channel byNumber(int n) {
+        List<Channel> f = full();
+        return (n >= 1 && n <= f.size()) ? f.get(n - 1) : null;
+    }
+
+    /** Jump the zap list to the channel with this number. */
+    public static boolean jumpToNumber(int n) {
+        Channel c = byNumber(n);
+        if (c == null) return false;
+        for (int i = 0; i < list.size(); i++) {
+            if (c.key.equals(list.get(i).key)) { pos = i; return true; }
+        }
+        return false;
+    }
+
+    /**
+     * Play a single channel (e.g. a direct number jump outside the current
+     * filter) WITHOUT touching the canonical full list, so later number
+     * lookups keep working.
+     */
+    public static void playSingle(Channel c) {
+        list = new ArrayList<>();
+        if (c != null) list.add(c);
+        pos = 0;
+    }
 }
