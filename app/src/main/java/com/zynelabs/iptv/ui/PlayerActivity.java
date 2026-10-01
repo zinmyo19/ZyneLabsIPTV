@@ -42,6 +42,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import com.zynelabs.iptv.data.Channel;
 import com.zynelabs.iptv.data.ImageLoader;
 import com.zynelabs.iptv.data.Store;
+import com.zynelabs.iptv.data.StreamRecorder;
 import com.zynelabs.iptv.data.XtreamClient;
 
 import java.util.ArrayList;
@@ -83,6 +84,8 @@ public class PlayerActivity extends Activity {
     private TextView hintView, subView, qBadge;
     private Button aspectBtn;
     private Button catchupBtn;
+    private Button recBtn;
+    private StreamRecorder recorder = new StreamRecorder();
     private boolean catchupMode = false;
     private Channel catchupChan = null;
     private AudioManager audioManager;
@@ -389,6 +392,13 @@ public class PlayerActivity extends Activity {
             @Override public void onClick(View v) { openExternal(); }
         });
         bottomBar.addView(extBtn);
+        // record while watching (Fred TV style) — HLS segments or raw
+        // stream saved as .ts into Downloads/ZyneLabsIPTV/
+        recBtn = Ui.flatBtn(this, "⏺", 15);
+        recBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { toggleRecord(); }
+        });
+        bottomBar.addView(recBtn);
         TextView liveBadge = Ui.label(this, isVod ? "" : "● LIVE", 13, Ui.RED, true);
         bottomBar.addView(liveBadge);
         // stream quality badge (SD / HD / FHD / 4K), filled in when the
@@ -1099,6 +1109,7 @@ public class PlayerActivity extends Activity {
     private void playCurrent() {
         final Channel c = PlayerQueue.current();
         if (c == null) { finish(); return; }
+        stopRecording(); // new channel = new stream; stop any active recording
         catchupMode = false;
         catchupChan = null;
         // Stalker portal channels need a fresh stream URL per play (create_link).
@@ -1230,6 +1241,65 @@ public class PlayerActivity extends Activity {
             playBtn.setText("⏸");
         }
         scheduleHide();
+    }
+
+    /** Record-while-watching toggle (Fred TV style). */
+    private void toggleRecord() {
+        if (recorder.isRecording()) {
+            recorder.stop();
+            return;
+        }
+        final Channel c = PlayerQueue.current();
+        if (c == null || c.url == null || c.url.isEmpty()) {
+            Toast.makeText(this, "No stream to record", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (c.url.toLowerCase(java.util.Locale.US).contains(".mpd")) {
+            Toast.makeText(this, "DASH recording not supported", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final String fileName = StreamRecorder.fileNameFor(dispName(c));
+        recorder.start(this, c.url, fileName, new StreamRecorder.Listener() {
+            @Override public void onStarted(final String fn) {
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        if (recBtn != null) recBtn.setTextColor(Ui.RED);
+                        Toast.makeText(PlayerActivity.this,
+                                "Recording… " + fn, Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+            @Override public void onStopped(final String fn, final long bytes) {
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        if (recBtn != null) recBtn.setTextColor(Ui.INK);
+                        if (bytes > 0)
+                            Toast.makeText(PlayerActivity.this,
+                                    "Saved: Downloads/ZyneLabsIPTV/" + fn,
+                                    Toast.LENGTH_LONG).show();
+                        else
+                            Toast.makeText(PlayerActivity.this,
+                                    "Recording stopped (no data)",
+                                    Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+            @Override public void onError(final String msg) {
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        if (recBtn != null) recBtn.setTextColor(Ui.INK);
+                        Toast.makeText(PlayerActivity.this,
+                                "Record failed: " + msg, Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
+        });
+        scheduleHide();
+    }
+
+    private void stopRecording() {
+        if (recorder.isRecording()) recorder.stop();
+        if (recBtn != null) recBtn.setTextColor(Ui.INK);
     }
 
     private void setControls(boolean show) {
@@ -1368,6 +1438,7 @@ public class PlayerActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        stopRecording();
         handler.removeCallbacks(seekTask);
         handler.removeCallbacks(hideTask);
         if (sleepTask != null) handler.removeCallbacks(sleepTask);
