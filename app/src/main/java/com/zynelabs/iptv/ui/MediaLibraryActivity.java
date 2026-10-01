@@ -55,6 +55,7 @@ public class MediaLibraryActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        Ui.applyTheme(this);
         acc = new Store(this).account(getIntent().getStringExtra("accountId"));
         if (acc == null) { finish(); return; }
         build();
@@ -81,14 +82,14 @@ public class MediaLibraryActivity extends Activity {
             }
         });
         top.addView(back);
-        TextView title = Ui.label(this, "🎞 Media Library", 17, Ui.INK, true);
+        TextView title = Ui.label(this, "Media Library", 17, Ui.INK, true);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         title.setLayoutParams(tlp);
         top.addView(title);
         root.addView(top);
 
-        searchBox = Ui.field(this, "🔍 Search movies…");
+        searchBox = Ui.field(this, "Search movies…");
         searchBox.setVisibility(View.GONE);
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -122,6 +123,7 @@ public class MediaLibraryActivity extends Activity {
         root.addView(content);
 
         setContentView(root);
+        Ui.enableTvFocus(root);
     }
 
     // ---------------- data ----------------
@@ -169,6 +171,8 @@ public class MediaLibraryActivity extends Activity {
         grid.setHorizontalSpacing(Ui.dp(this, 10));
         int p = Ui.dp(this, 12);
         grid.setPadding(p, p, p, p);
+        grid.setSelector(Ui.listSelector(this));
+        grid.setDrawSelectorOnTop(true);
         grid.setAdapter(new BaseAdapter() {
             @Override public int getCount() { return folderNames.size(); }
             @Override public Object getItem(int i) { return folderNames.get(i); }
@@ -182,10 +186,6 @@ public class MediaLibraryActivity extends Activity {
                 cell.setBackgroundColor(Ui.CARD);
                 int cp = Ui.dp(MediaLibraryActivity.this, 14);
                 cell.setPadding(cp, cp, cp, cp);
-                TextView icon = Ui.label(MediaLibraryActivity.this, "📁", 34,
-                        Ui.MUTED, false);
-                icon.setGravity(Gravity.CENTER);
-                cell.addView(icon);
                 TextView nm = Ui.label(MediaLibraryActivity.this, name, 13,
                         Ui.INK, true);
                 nm.setGravity(Gravity.CENTER);
@@ -214,6 +214,8 @@ public class MediaLibraryActivity extends Activity {
         searchBox.setVisibility(View.VISIBLE);
         content.removeAllViews();
         ListView list = new ListView(this);
+        list.setSelector(Ui.listSelector(this));
+        list.setDrawSelectorOnTop(true);
         list.setDividerHeight(0);
         listAdapter = new BaseAdapter() {
             @Override public int getCount() { return shown.size(); }
@@ -227,9 +229,6 @@ public class MediaLibraryActivity extends Activity {
                 int rp = Ui.dp(MediaLibraryActivity.this, 12);
                 row.setPadding(rp, Ui.dp(MediaLibraryActivity.this, 10), rp,
                         Ui.dp(MediaLibraryActivity.this, 10));
-                TextView icon = Ui.label(MediaLibraryActivity.this, "🎬", 22,
-                        Ui.MUTED, false);
-                row.addView(icon);
                 LinearLayout tx = new LinearLayout(MediaLibraryActivity.this);
                 tx.setOrientation(LinearLayout.VERTICAL);
                 LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0,
