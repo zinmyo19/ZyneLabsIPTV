@@ -36,15 +36,15 @@ public class Cats {
 
     /** First match wins. Keywords are matched as whole tokens. */
     private static final String[][] RULES = {
-            {ADULT, "xxx porn adult playboy xhamster redtube 18+"},
-            {SPORTS, "sport espn bein football soccer nba nfl cricket tennis golf racing wwe ufc mma boxing snooker darts olympic laliga bundesliga premier eurosport fifa"},
-            {MOVIES, "movie movies cinema film films hbo cinemax netflix showtime starz"},
-            {NEWS, "news cnn bbc aljazeera bloomberg cnbc france24 dwnews cna"},
-            {KIDS, "kids kid children cartoon cartoons disney nickelodeon nickjr cartoonito boomerang pbskids babytv"},
-            {RADIO, "radio fm"},
-            {MUSIC, "music mtv vh1 trace"},
-            {DOCS, "documentary documentaries discovery natgeo geographic history science animalplanet"},
-            {ENTERTAIN, "entertainment comedy drama reality variety show shows general family lifestyle"},
+            {ADULT, "xxx porn adult playboy xhamster redtube 18+ erotic sexy babes brazzers naughty"},
+            {SPORTS, "sports sport espn bein football soccer nba nfl cricket tennis golf racing wwe ufc mma boxing snooker darts olympics laliga bundesliga serie ligue champions europa league cup f1 motogp nascar indycar pga rugby nrl afl esports dazn skysports foxsports nbcsports cbssports supersport eurosport fifa fight bellator"},
+            {MOVIES, "movies movie cinema film films hbo cinemax netflix showtime starz blockbuster premiere paramount peacock hulu tcm film4"},
+            {NEWS, "news cnn bbc aljazeera jazeera bloomberg cnbc france24 dwnews cna headlines weather 24h breaking"},
+            {KIDS, "kids kid children childrens cartoon cartoons disney junior juniors jr nickjr nicktoons cartoonito boomerang pbskids babytv ducktv minimini pogo toonami"},
+            {RADIO, "radio radios fm dab"},
+            {MUSIC, "music mtv vh1 trace hits party retro dance club vevo stingray"},
+            {DOCS, "documentary documentaries docu discovery natgeo geographic history science animalplanet nature wild planet"},
+            {ENTERTAIN, "entertainment comedy drama dramas reality variety show shows series sitcom soap soaps opera talk gameshow telenovela shopping general family lifestyle premium platinum vip classic classics"},
     };
 
     /** "a-b_c" -> "a b c", lowercased, padded with spaces for token matching. */
@@ -84,12 +84,12 @@ public class Cats {
     /** ISO code, display name, keywords. Order matters: specific before generic. */
     private static final String[][] COUNTRIES = {
             {"GB", "UK", "uk england britain british london"},
-            {"US", "USA", "usa america american"},
+            {"US", "USA", "us usa america american"},
             {"CA", "Canada", "canada canadian"},
             {"AU", "Australia", "australia aussie"},
             {"IE", "Ireland", "ireland irish"},
             {"FR", "France", "france french"},
-            {"DE", "Germany", "germany german deutschland"},
+            {"DE", "Germany", "germany german deutschland deutsche"},
             {"ES", "Spain", "spain spanish espana"},
             {"IT", "Italy", "italy italian"},
             {"PT", "Portugal", "portugal portuguese"},
@@ -120,6 +120,17 @@ public class Cats {
             {"NZ", "New Zealand", "zealand"},
     };
 
+    /** 3-letter code -> ISO, for "USA - ESPN" style group-title prefixes. */
+    private static final String[][] ISO_ALIAS = {
+            {"GB", "UK"}, {"US", "USA"}, {"IN", "IND"}, {"PK", "PAK"}, {"BD", "BAN"},
+            {"DE", "GER"}, {"FR", "FRA"}, {"ES", "ESP"}, {"IT", "ITA"}, {"PT", "POR"},
+            {"RU", "RUS"}, {"UA", "UKR"}, {"KR", "KOR"}, {"JP", "JPN"}, {"CN", "CHN"},
+            {"AU", "AUS"}, {"CA", "CAN"}, {"BR", "BRA"}, {"MX", "MEX"}, {"AR", "ARG"},
+            {"SA", "ARA"}, {"TR", "TUR"}, {"GR", "GRE"}, {"NL", "NED"}, {"IE", "IRL"},
+            {"NZ", "NZL"}, {"ZA", "RSA"}, {"MM", "MYA"}, {"TH", "THA"}, {"MY", "MYS"},
+            {"SG", "SGP"}, {"ID", "IDN"}, {"PH", "PHL"}, {"VN", "VIE"}, {"PL", "POL"},
+    };
+
     public static final String COUNTRY_OTHER = "\uD83C\uDF10 Other";
 
     /** Regional-indicator flag emoji for an ISO code, e.g. "GB" -> flag. */
@@ -132,8 +143,44 @@ public class Cats {
         return sb.toString();
     }
 
+    /** First alphabetic token of a string, e.g. "US - ESPN" -> "US". */
+    private static String firstToken(String s) {
+        if (s == null) return "";
+        int i = 0;
+        while (i < s.length() && !Character.isLetter(s.charAt(i))) i++;
+        StringBuilder b = new StringBuilder();
+        while (i < s.length() && Character.isLetter(s.charAt(i))) b.append(s.charAt(i++));
+        return b.toString();
+    }
+
+    /** Match a leading country code: "US - ESPN", "UK|Sky", "[IN] Star", "USA Movies". */
+    private static String prefixCountry(String s) {
+        String t = firstToken(s);
+        if (t.length() < 2 || t.length() > 3) return null;
+        // 2-letter codes must be ALL CAPS ("US", not "It"/"In" as English words)
+        if (t.length() == 2 && !t.equals(t.toUpperCase(Locale.US))) return null;
+        String tu = t.toUpperCase(Locale.US);
+        String tl = " " + t.toLowerCase(Locale.US) + " ";
+        for (String[] co : COUNTRIES) {
+            if (tu.equals(co[0])) return flag(co[0]) + " " + co[1];
+            if ((" " + co[2] + " ").contains(tl) && t.length() == 3)
+                return flag(co[0]) + " " + co[1];
+        }
+        for (String[] a : ISO_ALIAS) {
+            if (tu.equals(a[1])) {
+                for (String[] co : COUNTRIES)
+                    if (co[0].equals(a[0])) return flag(co[0]) + " " + co[1];
+            }
+        }
+        return null;
+    }
+
     /** Country label for a channel, e.g. "<flag> UK". Empty string if unknown. */
     public static String countryOf(Channel c) {
+        String hit = prefixCountry(c.group);
+        if (hit != null) return hit;
+        hit = prefixCountry(c.name);
+        if (hit != null) return hit;
         String hay = tokens(c.group + " " + c.name);
         for (String[] co : COUNTRIES) {
             String[] kws = co[2].split(" ");
@@ -168,9 +215,44 @@ public class Cats {
         return g.trim().replaceAll("\\s+", " ");
     }
 
-    /** Dedupe key for a normalized group (case-insensitive). */
+    /**
+     * Dedupe key for a normalized group: merges variants like
+     * "UK | SPORTS", "Sports " and "SPORTS-HD" into one sub-group by
+     * dropping leading country-code tokens and trailing quality tags.
+     */
     public static String groupKey(String g) {
-        return normGroup(g).toLowerCase(Locale.US);
+        String t = normGroup(g).toLowerCase(Locale.US);
+        String[] parts = t.split("[^a-z0-9]+");
+        List<String> keep = new ArrayList<>();
+        for (String p : parts) if (!p.isEmpty()) keep.add(p);
+        while (!keep.isEmpty() && isCountryToken(keep.get(0))) keep.remove(0);
+        while (!keep.isEmpty() && isQualityToken(keep.get(keep.size() - 1)))
+            keep.remove(keep.size() - 1);
+        if (keep.isEmpty()) return t;
+        StringBuilder sb = new StringBuilder();
+        for (String p : keep) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(p);
+        }
+        return sb.toString();
+    }
+
+    /** 2-letter ISO code / display code or 3-letter alias, e.g. "uk", "usa". */
+    private static boolean isCountryToken(String t) {
+        if (t.length() == 2) {
+            for (String[] co : COUNTRIES) {
+                if (t.equals(co[0].toLowerCase(Locale.US))) return true;
+                if (t.equals(co[1].toLowerCase(Locale.US))) return true; // "uk"
+            }
+        } else if (t.length() == 3) {
+            for (String[] a : ISO_ALIAS) if (t.equals(a[1].toLowerCase(Locale.US))) return true;
+        }
+        return false;
+    }
+
+    private static boolean isQualityToken(String t) {
+        return "hd".equals(t) || "fhd".equals(t) || "uhd".equals(t)
+                || "4k".equals(t) || "8k".equals(t) || "sd".equals(t);
     }
 
     /**
