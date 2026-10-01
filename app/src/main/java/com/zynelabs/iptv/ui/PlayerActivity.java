@@ -3,7 +3,9 @@ package com.zynelabs.iptv.ui;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.text.Editable;
@@ -80,9 +82,13 @@ public class PlayerActivity extends Activity {
     private FrameLayout root;
     private TextView hintView, subView, qBadge;
     private Button aspectBtn;
+    private Button catchupBtn;
+    private boolean catchupMode = false;
+    private Channel catchupChan = null;
     private AudioManager audioManager;
     private int aspectMode = 0; // 0=Fit 1=Fill 2=Zoom
     private float videoScale = 1.0f; // OTT-style video scale mode (0.7–1.4)
+    private long pendingResumeMs = 0; // VOD "continue watching" offer
     private static final String[] ASPECT_NAMES = {"Fit", "Fill", "Zoom"};
     private int videoW = 0, videoH = 0;
     private float downX, downY;
@@ -91,6 +97,12 @@ public class PlayerActivity extends Activity {
     private float swipeStartBright = 0.5f;
     private Runnable hintHideTask = new Runnable() {
         @Override public void run() { if (hintView != null) hintView.setVisibility(View.GONE); }
+    };
+
+    // OTT-style channel number direct entry (remote 0–9)
+    private String numBuf = "";
+    private Runnable numTask = new Runnable() {
+        @Override public void run() { commitNumber(); }
     };
 
     // picture-in-picture + in-player channel drawer
@@ -105,6 +117,7 @@ public class PlayerActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        Ui.applyTheme(this);
         // draw into the display cutout area (no black letterbox bar in landscape).
         // NOTE: getAttributes() returns a copy — must call setAttributes()
         // for the change to take effect, and use ALWAYS (strongest request).
@@ -120,6 +133,8 @@ public class PlayerActivity extends Activity {
         videoScale = new Store(this).videoScale();
         buildPlayer();
         build();
+        Ui.enableTvFocus(root);
+        if (playBtn != null) playBtn.requestFocus(); // TV: D-pad starts here
         enterFullscreen();
         playCurrent();
     }
@@ -148,6 +163,10 @@ public class PlayerActivity extends Activity {
                 } else if (state == Player.STATE_READY || state == Player.STATE_ENDED) {
                     spinner.setVisibility(View.GONE);
                     playBtn.setText(player.isPlaying() ? "⏸" : "▶");
+                    if (state == Player.STATE_READY && pendingResumeMs > 0) {
+                        offerResume(pendingResumeMs);
+                        pendingResumeMs = 0;
+                    }
                 }
             }
 
@@ -259,18 +278,18 @@ public class PlayerActivity extends Activity {
         plp.setMargins(Ui.dp(this, 8), 0, 0, 0);
         posText.setLayoutParams(plp);
         row.addView(posText);
-        Button close = Ui.circleBtn(this, "✕", 16);
+        Button close = Ui.flatBtn(this, "✕", 16);
         close.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { finish(); }
         });
         // in-player channel browser: search + switch without leaving playback
-        Button drawerBtn = Ui.circleBtn(this, "📺", 15);
+        Button drawerBtn = Ui.flatBtn(this, "📺", 15);
         drawerBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { toggleDrawer(); }
         });
         row.addView(drawerBtn);
         // picture-in-picture: keep playing in a screen corner
-        Button pipBtn = Ui.circleBtn(this, "PiP", 10);
+        Button pipBtn = Ui.flatBtn(this, "PiP", 10);
         pipBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { enterPip(); }
         });
@@ -293,17 +312,17 @@ public class PlayerActivity extends Activity {
         bottomBar.setGravity(Gravity.CENTER_VERTICAL);
         bottomBar.setBackgroundColor(0xAA0C0906);
         bottomBar.setPadding(p, p, p, p);
-        playBtn = Ui.circleBtn(this, "⏸", 18);
+        playBtn = Ui.flatBtn(this, "⏸", 18);
         playBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { togglePlay(); }
         });
         bottomBar.addView(playBtn);
-        Button prevCh = Ui.circleBtn(this, "⏮", 15);
+        Button prevCh = Ui.flatBtn(this, "⏮", 15);
         prevCh.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { zap(false); }
         });
         bottomBar.addView(prevCh);
-        Button nextCh = Ui.circleBtn(this, "⏭", 15);
+        Button nextCh = Ui.flatBtn(this, "⏭", 15);
         nextCh.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { zap(true); }
         });
@@ -323,7 +342,7 @@ public class PlayerActivity extends Activity {
             @Override public void onStopTrackingTouch(SeekBar s) {}
         });
         bottomBar.addView(seek);
-        aspectBtn = Ui.circleBtn(this, "⛶", 15);
+        aspectBtn = Ui.flatBtn(this, "⛶", 15);
         aspectBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { cycleAspect(); }
         });
@@ -331,16 +350,45 @@ public class PlayerActivity extends Activity {
             @Override public boolean onLongClick(View v) { showScaleDialog(); return true; }
         });
         bottomBar.addView(aspectBtn);
-        Button subBtn = Ui.circleBtn(this, "💬", 15);
+        Button subBtn = Ui.flatBtn(this, "💬", 15);
         subBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { dlgSubs(); }
         });
         bottomBar.addView(subBtn);
-        Button sleepBtn = Ui.circleBtn(this, "⏱", 16);
+        Button sleepBtn = Ui.flatBtn(this, "⏱", 16);
         sleepBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { dlgSleep(); }
         });
         bottomBar.addView(sleepBtn);
+        // playback speed (OTT-style)
+        Button speedBtn = Ui.flatBtn(this, "🏃", 14);
+        speedBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { dlgSpeed(); }
+        });
+        bottomBar.addView(speedBtn);
+        // audio track selection (OTT-style)
+        Button audioBtn = Ui.flatBtn(this, "🎧", 14);
+        audioBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { dlgAudio(); }
+        });
+        bottomBar.addView(audioBtn);
+        // catch-up / archive (Xtream timeshift, OTT-style) — shown only
+        // for live channels whose provider enables archive
+        catchupBtn = Ui.flatBtn(this, "\uD83D\uDCFC", 14);
+        catchupBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (catchupMode) backToLive();
+                else dlgCatchup();
+            }
+        });
+        catchupBtn.setVisibility(View.GONE);
+        bottomBar.addView(catchupBtn);
+        // open in external player (VLC / MX Player)
+        Button extBtn = Ui.flatBtn(this, "↗", 15);
+        extBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { openExternal(); }
+        });
+        bottomBar.addView(extBtn);
         TextView liveBadge = Ui.label(this, isVod ? "" : "● LIVE", 13, Ui.RED, true);
         bottomBar.addView(liveBadge);
         // stream quality badge (SD / HD / FHD / 4K), filled in when the
@@ -551,19 +599,19 @@ public class PlayerActivity extends Activity {
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = Ui.label(this, "📺 Channels", 16, Ui.INK, true);
+        TextView title = Ui.label(this, "Channels", 16, Ui.INK, true);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         title.setLayoutParams(tlp);
         head.addView(title);
-        Button x = Ui.circleBtn(this, "✕", 14);
+        Button x = Ui.flatBtn(this, "✕", 14);
         x.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { toggleDrawer(); }
         });
         head.addView(x);
         chanDrawer.addView(head);
 
-        chanSearch = Ui.field(this, "🔍 Search…");
+        chanSearch = Ui.field(this, "Search…");
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         slp.setMargins(0, Ui.dp(this, 8), 0, Ui.dp(this, 8));
@@ -579,6 +627,8 @@ public class PlayerActivity extends Activity {
         chanDrawer.addView(chanSearch);
 
         chanListView = new ListView(this);
+        chanListView.setSelector(Ui.listSelector(this));
+        chanListView.setDrawSelectorOnTop(true);
         chanListView.setDividerHeight(0);
         chanAdapter = new BaseAdapter() {
             @Override public int getCount() { return drawerShown.size(); }
@@ -594,7 +644,7 @@ public class PlayerActivity extends Activity {
                 row.setPadding(rp, Ui.dp(PlayerActivity.this, 8), rp,
                         Ui.dp(PlayerActivity.this, 8));
                 TextView nm = Ui.label(PlayerActivity.this,
-                        (cur ? "▶ " : "") + c.name, 14,
+                        (cur ? "▶ " : "") + dispName(c), 14,
                         cur ? Ui.TEAL : Ui.INK, cur);
                 LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(0,
                         ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
@@ -636,7 +686,8 @@ public class PlayerActivity extends Activity {
         for (Channel c : PlayerQueue.full()) {
             if (drawerShown.size() >= 500) break;
             if (!drawerQuery.isEmpty()
-                    && !c.name.toLowerCase().contains(drawerQuery)) continue;
+                    && !c.name.toLowerCase().contains(drawerQuery)
+                    && !dispName(c).toLowerCase().contains(drawerQuery)) continue;
             drawerShown.add(c);
         }
         if (chanAdapter != null) chanAdapter.notifyDataSetChanged();
@@ -793,9 +844,263 @@ public class PlayerActivity extends Activity {
                 }).show();
     }
 
+    // ---------------- playback speed (OTT-style) ----------------
+    private void dlgSpeed() {
+        if (player == null) return;
+        final float[] vals = {0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f};
+        final String[] labels = new String[vals.length];
+        float cur = player.getPlaybackParameters().speed;
+        int checked = 3;
+        for (int i = 0; i < vals.length; i++) {
+            labels[i] = (vals[i] == 1f ? "Normal" : vals[i] + "x");
+            if (Math.abs(vals[i] - cur) < 0.01f) checked = i;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Playback speed")
+                .setSingleChoiceItems(labels, checked,
+                        new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        player.setPlaybackSpeed(vals[w]);
+                        showHint("🏃", "Speed: " + labels[w]);
+                        d.dismiss();
+                    }
+                })
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    // ---------------- audio track selection (OTT-style) ----------------
+    private void dlgAudio() {
+        if (player == null) return;
+        final ArrayList<String> langs = new ArrayList<>();
+        final ArrayList<String> labels = new ArrayList<>();
+        Tracks tracks = player.getCurrentTracks();
+        for (Tracks.Group g : tracks.getGroups()) {
+            if (g.getType() != C.TRACK_TYPE_AUDIO) continue;
+            for (int i = 0; i < g.length; i++) {
+                String lang = g.getTrackFormat(i).language;
+                if (lang == null) lang = "";
+                if (langs.contains(lang)) continue;
+                langs.add(lang);
+                String label = g.getTrackFormat(i).label;
+                if (label == null || label.isEmpty()) {
+                    label = lang.isEmpty() ? ("Track " + langs.size()) : lang;
+                }
+                labels.add(label);
+            }
+        }
+        if (langs.size() < 2) {
+            Toast.makeText(this,
+                    langs.isEmpty() ? "No audio tracks in this stream"
+                            : "Only one audio track",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final String[] items = labels.toArray(new String[0]);
+        new AlertDialog.Builder(this)
+                .setTitle("Audio track")
+                .setItems(items, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        String lang = langs.get(w);
+                        player.setTrackSelectionParameters(
+                                player.getTrackSelectionParameters().buildUpon()
+                                        .setPreferredAudioLanguage(
+                                                lang.isEmpty() ? null : lang)
+                                        .build());
+                        Toast.makeText(PlayerActivity.this,
+                                "Audio: " + items[w], Toast.LENGTH_SHORT).show();
+                        scheduleHide();
+                    }
+                }).show();
+    }
+
+    // ---------------- catch-up / archive (Xtream timeshift, OTT-style) ----------------
+    private void dlgCatchup() {
+        final Channel live = PlayerQueue.current();
+        if (live == null || !live.archive) return;
+        setControls(true);
+        Toast.makeText(this, "Loading program guide…", Toast.LENGTH_SHORT).show();
+        new Thread(new Runnable() {
+            @Override public void run() {
+                final java.util.List<XtreamClient.Program> all =
+                        XtreamClient.catchupEpg(live);
+                final java.util.List<XtreamClient.Program> past = new java.util.ArrayList<>();
+                final java.util.List<Long> starts = new java.util.ArrayList<>();
+                final java.util.List<Long> durs = new java.util.ArrayList<>();
+                long now = System.currentTimeMillis();
+                for (XtreamClient.Program pr : all) {
+                    long st = XtreamClient.parseEpgTime(pr.start);
+                    long en = XtreamClient.parseEpgTime(pr.stop);
+                    if (st < 0 || st > now) continue; // only already-aired
+                    long durMin = en > st ? (en - st) / 60000 : 60;
+                    if (durMin < 1) durMin = 60;
+                    past.add(pr); starts.add(st); durs.add(durMin);
+                    if (past.size() >= 60) break;
+                }
+                runOnUiThread(new Runnable() {
+                    @Override public void run() { showCatchupList(live, past, starts, durs); }
+                });
+            }
+        }).start();
+    }
+
+    private void showCatchupList(final Channel live,
+                                 final java.util.List<XtreamClient.Program> past,
+                                 final java.util.List<Long> starts,
+                                 final java.util.List<Long> durs) {
+        if (past.isEmpty()) {
+            Toast.makeText(this, "No catch-up programs found", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final String[] items = new String[past.size()];
+        for (int i = 0; i < past.size(); i++) {
+            XtreamClient.Program pr = past.get(i);
+            items[i] = pr.timeRange() + "  " + pr.title;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("\uD83D\uDCFC Catch-up — " + dispName(live))
+                .setItems(items, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        playCatchup(live, past.get(w), starts.get(w), durs.get(w));
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void playCatchup(Channel live, XtreamClient.Program pr,
+                             long startMs, long durMin) {
+        String url = XtreamClient.timeshiftUrl(live, startMs, durMin);
+        if (url.isEmpty()) {
+            Toast.makeText(this, "Catch-up URL failed", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Channel cu = new Channel();
+        cu.kind = Channel.VOD; // seek bar visible, like VOD
+        cu.key = live.key + "_cu" + startMs;
+        cu.name = pr.title;
+        cu.logo = live.logo;
+        cu.group = live.group;
+        cu.url = url;
+        cu.server = live.server; cu.user = live.user; cu.pass = live.pass;
+        cu.streamId = live.streamId;
+        catchupMode = true;
+        catchupChan = cu;
+        isVod = true;
+        seek.setVisibility(View.VISIBLE);
+        startPlayback(cu);
+        showHint("\uD83D\uDCFC", pr.title);
+        Toast.makeText(this, "📼 Catch-up — tap 📼 again for live",
+                Toast.LENGTH_LONG).show();
+    }
+
+    /** Leave catch-up and return to the live channel. */
+    private void backToLive() {
+        catchupMode = false;
+        catchupChan = null;
+        Channel live = PlayerQueue.current();
+        if (live == null) return;
+        isVod = false;
+        seek.setVisibility(View.GONE);
+        playCurrent();
+        Toast.makeText(this, "🔴 Back to live", Toast.LENGTH_SHORT).show();
+    }
+
+    // ---------------- external player (OTT-style fallback) ----------------
+    private void openExternal() {
+        Channel c = PlayerQueue.current();
+        if (c == null || c.url == null || c.url.isEmpty()) {
+            Toast.makeText(this, "No stream URL", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            String mime = "video/*";
+            String u = c.url.toLowerCase();
+            if (u.contains(".m3u8")) mime = "application/x-mpegURL";
+            Intent i = new Intent(Intent.ACTION_VIEW);
+            i.setDataAndType(Uri.parse(c.url), mime);
+            startActivity(Intent.createChooser(i, "Open with…"));
+        } catch (Exception e) {
+            Toast.makeText(this, "No app can open this stream",
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ---------------- channel number direct entry (OTT-style) ----------------
+    private void onNumberKey(int digit) {
+        if (numBuf.length() >= 4) numBuf = "";
+        numBuf += digit;
+        showHint("🔢", "Channel " + numBuf + "…");
+        handler.removeCallbacks(numTask);
+        handler.postDelayed(numTask, 1200);
+        setControls(true);
+    }
+
+    private void commitNumber() {
+        if (numBuf.isEmpty()) return;
+        int n;
+        try { n = Integer.parseInt(numBuf); } catch (Exception e) { n = -1; }
+        numBuf = "";
+        if (n < 1) return;
+        Channel c = PlayerQueue.byNumber(n);
+        if (c == null) {
+            showHint("🔢", "No channel " + n);
+            return;
+        }
+        if (!PlayerQueue.jumpToNumber(n)) {
+            // not in the current zap list (e.g. filtered): play directly,
+            // keeping the canonical full list intact for later number jumps
+            PlayerQueue.playSingle(c);
+        }
+        isVod = PlayerQueue.current().kind != Channel.LIVE;
+        seek.setVisibility(isVod ? View.VISIBLE : View.GONE);
+        playCurrent();
+        showHint("🔢", n + " · " + dispName(c));
+    }
+
+    private void offerResume(final long ms) {
+        final Channel c = PlayerQueue.current();
+        if (c == null) return;
+        long dur = player != null ? player.getDuration() : 0;
+        // stale bookmark (past the end) — drop it silently
+        if (dur > 0 && dur != C.TIME_UNSET && ms >= dur - 15_000) {
+            String accId = PlayerQueue.accountId();
+            if (!accId.isEmpty()) new Store(this).clearResumePos(accId, c.key);
+            return;
+        }
+        setControls(true);
+        new AlertDialog.Builder(this)
+                .setTitle("Continue watching?")
+                .setMessage("Resume \"" + dispName(c) + "\" from " + fmtTime(ms) + "?")
+                .setPositiveButton("▶ Resume", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        if (player != null) player.seekTo(ms);
+                        scheduleHide();
+                    }
+                })
+                .setNegativeButton("↺ Restart", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        String accId = PlayerQueue.accountId();
+                        if (!accId.isEmpty())
+                            new Store(PlayerActivity.this).clearResumePos(accId, c.key);
+                        scheduleHide();
+                    }
+                })
+                .show();
+    }
+
+    private static String fmtTime(long ms) {
+        long s = ms / 1000;
+        long h = s / 3600, m = (s % 3600) / 60, sec = s % 60;
+        return h > 0 ? String.format("%d:%02d:%02d", h, m, sec)
+                : String.format("%d:%02d", m, sec);
+    }
+
     private void playCurrent() {
         final Channel c = PlayerQueue.current();
         if (c == null) { finish(); return; }
+        catchupMode = false;
+        catchupChan = null;
         // Stalker portal channels need a fresh stream URL per play (create_link).
         if (c.stalkerCmd != null && !c.stalkerCmd.isEmpty() && !resolvingLink) {
             resolvingLink = true;
@@ -828,15 +1133,42 @@ public class PlayerActivity extends Activity {
         startPlayback(c);
     }
 
+
+    /** Display name: user's custom rename if set, else the playlist name. */
+    private String dispName(Channel c) {
+        String accId = PlayerQueue.accountId();
+        if (!accId.isEmpty()) {
+            String n = new Store(this).customName(accId, c.key);
+            if (!n.isEmpty()) return n;
+        }
+        return c.name;
+    }
+
     /** Begin ExoPlayer playback for a channel whose stream URL is ready. */
     private void startPlayback(final Channel c) {
-        titleText.setText(c.name);
+        int num = (c.kind == Channel.LIVE) ? PlayerQueue.numberOf(c) : -1;
+        titleText.setText(num > 0 ? num + " · " + dispName(c) : dispName(c));
+        // catch-up button: only on live channels with provider archive support
+        if (catchupBtn != null)
+            catchupBtn.setVisibility(
+                    (catchupMode || (c.kind == Channel.LIVE && c.archive))
+                            ? View.VISIBLE : View.GONE);
         posText.setText(PlayerQueue.position());
-        ImageLoader.load(c.logo, logoView, android.R.drawable.ic_media_play);
+        ImageLoader.load(c.logo, logoView, Ui.catArt(this, c));
         errText.setText("");
         updateQualityBadge(0); // hide until the new stream's size is known
         nowNextText.setVisibility(View.GONE);
         updateClock();
+        player.setPlaybackSpeed(1f); // new channel: back to normal speed
+        // VOD resume ("continue watching", like OTT Navigator)
+        pendingResumeMs = 0;
+        if (c.kind != Channel.LIVE) {
+            String accId = PlayerQueue.accountId();
+            if (!accId.isEmpty()) {
+                long rz = new Store(this).resumePos(accId, c.key);
+                if (rz > 10_000) pendingResumeMs = rz;
+            }
+        }
         // record recent (skip series containers)
         if (c.kind != Channel.SERIES) {
             String accId = PlayerQueue.accountId();
@@ -904,6 +1236,7 @@ public class PlayerActivity extends Activity {
         controlsVisible = show;
         topBar.setVisibility(show ? View.VISIBLE : View.GONE);
         bottomBar.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show && playBtn != null) playBtn.requestFocus();
         handler.removeCallbacks(hideTask);
         if (show) scheduleHide();
     }
@@ -927,25 +1260,66 @@ public class PlayerActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        boolean drawerOpen = chanDrawer != null
+                && chanDrawer.getVisibility() == View.VISIBLE;
+        if (keyCode == KeyEvent.KEYCODE_BACK && drawerOpen) {
+            toggleDrawer();
+            return true;
+        }
+        // channel drawer open: let the list consume D-pad
+        if (drawerOpen) return super.onKeyDown(keyCode, event);
+        // OTT-style direct channel number entry (remote 0–9), live only
+        if (!isVod) {
+            int digit = -1;
+            if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)
+                digit = keyCode - KeyEvent.KEYCODE_0;
+            else if (keyCode >= KeyEvent.KEYCODE_NUMPAD_0
+                    && keyCode <= KeyEvent.KEYCODE_NUMPAD_9)
+                digit = keyCode - KeyEvent.KEYCODE_NUMPAD_0;
+            if (digit >= 0) { onNumberKey(digit); return true; }
+        }
+        // transport keys always work
         switch (keyCode) {
-            case KeyEvent.KEYCODE_DPAD_UP:
-            case KeyEvent.KEYCODE_CHANNEL_UP:
-                zap(false);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN:
-            case KeyEvent.KEYCODE_CHANNEL_DOWN:
-                zap(true);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_CENTER:
-            case KeyEvent.KEYCODE_ENTER:
-                setControls(!controlsVisible);
-                return true;
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
             case KeyEvent.KEYCODE_MEDIA_PAUSE:
             case KeyEvent.KEYCODE_MEDIA_PLAY:
                 togglePlay();
                 return true;
+            case KeyEvent.KEYCODE_MEDIA_NEXT:
+                zap(true);
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+                zap(false);
+                return true;
         }
+        if (!controlsVisible) {
+            // fullscreen watching: remote shortcuts (OTT-style)
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_DPAD_UP:
+                case KeyEvent.KEYCODE_CHANNEL_UP:
+                    zap(false);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                case KeyEvent.KEYCODE_CHANNEL_DOWN:
+                    zap(true);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                    if (isVod && player != null)
+                        player.seekTo(Math.max(0, player.getCurrentPosition() - 10_000));
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    if (isVod && player != null)
+                        player.seekTo(player.getCurrentPosition() + 10_000);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_CENTER:
+                case KeyEvent.KEYCODE_ENTER:
+                    setControls(true);
+                    return true;
+            }
+            return super.onKeyDown(keyCode, event);
+        }
+        // controls visible: D-pad moves focus between buttons (now glowing),
+        // CENTER/ENTER clicks the focused button via default handling
         return super.onKeyDown(keyCode, event);
     }
 
@@ -955,6 +1329,21 @@ public class PlayerActivity extends Activity {
         // In PiP the video must keep playing in the corner window.
         boolean pip = android.os.Build.VERSION.SDK_INT >= 24 && isInPictureInPictureMode();
         if (player != null && !pip) player.pause();
+        // VOD "continue watching" bookmark (OTT-style)
+        if (isVod && player != null) {
+            Channel c = PlayerQueue.current();
+            String accId = PlayerQueue.accountId();
+            if (c != null && !accId.isEmpty()) {
+                Store st = new Store(this);
+                long pos = player.getCurrentPosition();
+                long dur = player.getDuration();
+                if (pos > 10_000 && dur > 0 && dur != C.TIME_UNSET && pos < dur - 15_000) {
+                    st.setResumePos(accId, c.key, pos);
+                } else if (dur > 0 && dur != C.TIME_UNSET && pos >= dur - 15_000) {
+                    st.clearResumePos(accId, c.key); // watched to the end
+                }
+            }
+        }
         handler.removeCallbacks(seekTask);
         handler.removeCallbacks(hideTask);
     }
