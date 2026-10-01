@@ -21,9 +21,9 @@ chmod -R u+w $OUT 2>/dev/null || true
 rm -rf $OUT && mkdir -p $OUT/compiled $OUT/gen $OUT/classes $OUT/dex \
   $OUT/aar $OUT/static-lib $OUT/lib-classes $OUT/gen-lib
 
-VER_CODE=21
-VER_NAME="3.10.2"
-APK_NAME="ZyneLabsIPTV-3.10.2.apk"
+VER_CODE=34
+VER_NAME="3.21.0"
+APK_NAME="ZyneLabsIPTV-3.21.0.apk"
 
 echo "=== [1/7] Extracting AARs/JARs ==="
 CP="$ANDROID_JAR"
