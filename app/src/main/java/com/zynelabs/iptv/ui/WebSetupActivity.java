@@ -59,7 +59,7 @@ public class WebSetupActivity extends Activity {
         int p = Ui.dp(this, 24);
         root.setPadding(p, p, p, p);
 
-        TextView title = Ui.label(this, "📲 Add playlist from your phone", 20, Ui.INK, true);
+        TextView title = Ui.label(this, "Add playlist from your phone", 20, Ui.INK, true);
         title.setGravity(Gravity.CENTER);
         root.addView(title);
         root.addView(Ui.spacer(this, 12));
@@ -93,7 +93,7 @@ public class WebSetupActivity extends Activity {
         root.addView(status);
         root.addView(Ui.spacer(this, 16));
 
-        android.widget.Button again = Ui.flatBtn(this, "🔄 New code", 15);
+        android.widget.Button again = Ui.flatBtn(this, "New code", 15);
         again.setTextColor(Ui.TEAL);
         again.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
