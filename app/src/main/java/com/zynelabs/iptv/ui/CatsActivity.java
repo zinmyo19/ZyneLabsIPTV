@@ -57,9 +57,9 @@ public class CatsActivity extends Activity {
             return;
         }
         tab = getIntent().getIntExtra("tab", Channel.LIVE);
-        final String title = tab == Channel.VOD ? "🎬 Movie Categories"
-                : tab == Channel.SERIES ? "📼 Series Categories"
-                : "📺 Live TV Categories";
+        final String title = tab == Channel.VOD ? "Movie Categories"
+                : tab == Channel.SERIES ? "Series Categories"
+                : "Live TV Categories";
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -185,7 +185,7 @@ public class CatsActivity extends Activity {
                 if (n == null || n == 0) continue;
                 if (store.adultLocked() && Cats.ADULT.equals(cat)) continue;
                 final String c2 = cat;
-                addRow(catIcon(cat), cat, String.valueOf(n),
+                addRow(catIcon(cat), Ui.stripEmoji(cat), String.valueOf(n),
                         new Runnable() {
                             @Override public void run() { openCat(c2); }
                         });
