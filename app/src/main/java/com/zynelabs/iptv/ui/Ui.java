@@ -36,7 +36,26 @@ public class Ui {
     public static final String[] THEME_IDS =
             {"calm", "ocean", "ember", "grape", "paper"};
     public static final String[] THEME_NAMES =
-            {"🌙 Calm Night", "🌊 Ocean Dark", "🔥 Ember", "💜 Grape", "⬜ Paper Light"};
+            {"Calm Night", "Ocean Dark", "Ember", "Grape", "Paper Light"};
+
+    /** Remove a leading emoji (and following space) from a display label. */
+    public static String stripEmoji(String s) {
+        if (s == null) return "";
+        int i = 0, n = s.length();
+        while (i < n) {
+            int cp = s.codePointAt(i);
+            boolean emoji = (cp >= 0x1F300 && cp <= 0x1FAFF)
+                    || (cp >= 0x2600 && cp <= 0x27BF)
+                    || (cp >= 0x2B00 && cp <= 0x2BFF)
+                    || (cp >= 0x2300 && cp <= 0x23FF)
+                    || (cp >= 0x2100 && cp <= 0x214F)
+                    || cp == 0xFE0F || cp == 0x200D;
+            if (!emoji) break;
+            i += Character.charCount(cp);
+        }
+        while (i < n && s.charAt(i) == ' ') i++;
+        return s.substring(i);
+    }
 
     /** Load the user's theme into the palette. Call in every onCreate(). */
     public static void applyTheme(Context c) {
@@ -539,7 +558,9 @@ public class Ui {
         return v;
     }
 
-    /** Plain text row: [icon] title ......... count. Focusable, subtle highlight. */
+    /** Plain text row: title ......... count. Focusable, subtle highlight.
+     *  The icon slot is kept in the hierarchy (GONE) so child indices stay
+     *  stable for existing getChildAt() users. */
     public static LinearLayout textRow(Context c, String icon, String title,
                                        String count) {
         LinearLayout row = new LinearLayout(c);
@@ -550,15 +571,10 @@ public class Ui {
         row.setPadding(hp, dp(c, 13), hp, dp(c, 13));
         row.setFocusable(true);
 
-        if (icon != null && !icon.isEmpty()) {
-            TextView ic = label(c, icon, 20, TEAL, false);
-            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT);
-            ilp.setMargins(0, 0, dp(c, 12), 0);
-            ic.setLayoutParams(ilp);
-            row.addView(ic);
-        }
+        // icon hidden by design (clean, text-only rows) — kept GONE for index stability
+        TextView ic = label(c, "", 20, TEAL, false);
+        ic.setVisibility(View.GONE);
+        row.addView(ic);
         TextView t = label(c, title, 16, INK, false);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
