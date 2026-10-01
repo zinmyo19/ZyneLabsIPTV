@@ -10,7 +10,8 @@
         android:icon="@drawable/ic_launcher"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="true"
-        android:allowBackup="true">
+        android:allowBackup="true"
+        android:largeHeap="true">
         <activity android:name=".ui.SetupActivity"
             android:exported="true">
             <intent-filter>
@@ -19,7 +20,7 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".ui.HomeActivity"
+        <activity android:name=".ui.ChannelListActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
         <activity android:name=".ui.SectionsActivity"
@@ -34,6 +35,12 @@
             android:exported="false"
             android:supportsPictureInPicture="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden" />
+        <activity android:name=".ui.WebSetupActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".ui.CatsActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
         <activity android:name=".ui.MediaLibraryActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
