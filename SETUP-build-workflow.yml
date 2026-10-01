@@ -1,0 +1,153 @@
+# ============================================================================
+# ONE-TIME PHONE SETUP: this file must live at .github/workflows/build.yml
+# On github.com (phone browser): open this file -> pencil Edit -> rename the
+# filename box to:  .github/workflows/build.yml  -> Commit changes. Done.
+# (The API token cannot write that folder, so this one manual move is needed.)
+# ============================================================================
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'libs/**'
+      - 'build.sh'
+      - 'gen_lib_r.py'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null
+          "$SDKMANAGER" "build-tools;34.0.0" "platforms;android-34"
+
+      - name: Build APK (manual pipeline, no Gradle)
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          BT="$SDK/build-tools/34.0.0"
+          AAPT2="$BT/aapt2"; D8="$BT/d8"; ZIPALIGN="$BT/zipalign"; APKSIGNER="$BT/apksigner"
+          ANDROID_JAR="$SDK/platforms/android-34/android.jar"
+
+          PROJ="$GITHUB_WORKSPACE"
+          M="$PROJ/app/src/main"
+          LIBS="$PROJ/libs"
+          OUT=/tmp/zyne-iptv-out
+          export ZYNE_OUT="$OUT" ZYNE_PROJ="$PROJ"
+          rm -rf "$OUT" && mkdir -p "$OUT/compiled" "$OUT/gen" "$OUT/classes" "$OUT/dex" \
+            "$OUT/aar" "$OUT/lib-classes"
+
+          # version comes from build.sh (single source of truth)
+          eval "$(grep -E '^(VER_CODE|VER_NAME|APK_NAME)=' "$PROJ/build.sh")"
+          echo "Building $APK_NAME (code $VER_CODE)"
+
+          echo "=== [1/7] Extracting AARs/JARs ==="
+          CP="$ANDROID_JAR"
+          AAR_RES_ZIPS=""
+          > "$OUT/aar_pkgs.txt"
+          for aar in "$LIBS"/*.aar; do
+            n=$(basename "$aar" .aar)
+            d="$OUT/aar/$n"
+            mkdir -p "$d"
+            unzip -q -o "$aar" -d "$d"
+            if [ -f "$d/classes.jar" ]; then
+              CP="$CP:$d/classes.jar"
+              mkdir -p "$OUT/lib-classes/$n"
+              (cd "$OUT/lib-classes/$n" && unzip -q -n "$d/classes.jar")
+            fi
+            for j in "$d"/libs/*.jar; do
+              [ -f "$j" ] || continue
+              CP="$CP:$j"
+            done
+            if [ -d "$d/res" ]; then
+              "$AAPT2" compile --dir "$d/res" -o "$OUT/compiled/aar-$n.zip"
+              AAR_RES_ZIPS="$AAR_RES_ZIPS -R $OUT/compiled/aar-$n.zip"
+              pkg=$(grep -o 'package="[^"]*"' "$d/AndroidManifest.xml" | head -1 | cut -d'"' -f2)
+              echo "$n|$pkg" >> "$OUT/aar_pkgs.txt"
+            fi
+          done
+          for j in "$LIBS"/*.jar; do
+            case "$j" in *empty-to-avoid-conflict*) continue;; esac
+            CP="$CP:$j"
+            bn=$(basename "$j" .jar)
+            mkdir -p "$OUT/lib-classes/plain-$bn"
+            (cd "$OUT/lib-classes/plain-$bn" && unzip -q -n "$j")
+          done
+          find "$OUT/lib-classes" -path "*/META-INF/*" -delete 2>/dev/null || true
+
+          echo "=== [2/7] Compiling resources ==="
+          "$AAPT2" compile --dir "$M/res" -o "$OUT/compiled/res.zip"
+
+          echo "=== [3/7] Linking ==="
+          # shellcheck disable=SC2086
+          "$AAPT2" link -o "$OUT/base.apk" \
+            -I "$ANDROID_JAR" \
+            --manifest "$M/AndroidManifest.xml" \
+            -R "$OUT/compiled/res.zip" \
+            $AAR_RES_ZIPS \
+            --auto-add-overlay \
+            --min-sdk-version 24 \
+            --target-sdk-version 34 \
+            --version-code "$VER_CODE" \
+            --version-name "$VER_NAME" \
+            --java "$OUT/gen" \
+            --output-text-symbols "$OUT/R.txt"
+
+          echo "=== [3b/7] Generating library R.java ==="
+          python3 "$PROJ/gen_lib_r.py"
+
+          echo "=== [4/7] Compiling Java ==="
+          javac -encoding UTF-8 -nowarn \
+            -cp "$CP" \
+            -d "$OUT/classes" \
+            $(find "$M/java" -name '*.java') \
+            $(find "$OUT/gen" "$OUT/gen-lib-r" -name 'R.java')
+          [ -f "$OUT/classes/com/zynelabs/iptv/R.class" ] || { echo "FATAL: R.class missing"; exit 1; }
+
+          echo "=== [5/7] Dexing ==="
+          "$D8" --min-api 24 --lib "$ANDROID_JAR" --output "$OUT/dex" \
+            $(find "$OUT/classes" "$OUT/lib-classes" -name '*.class')
+
+          echo "=== [6/7] Packaging, aligning, signing ==="
+          cp "$OUT/base.apk" "$OUT/unsigned.apk"
+          (cd "$OUT/dex" && zip -q -j "$OUT/unsigned.apk" classes*.dex)
+          "$ZIPALIGN" -p 4 "$OUT/unsigned.apk" "$OUT/aligned.apk"
+          echo "$ANDROID_KEYSTORE_B64" | base64 -d > /tmp/zyne.keystore
+          "$APKSIGNER" sign --ks /tmp/zyne.keystore --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" --out "$OUT/$APK_NAME" "$OUT/aligned.apk"
+          rm -f /tmp/zyne.keystore
+          "$ZIPALIGN" -c -p 4 "$OUT/$APK_NAME" && echo "zipalign OK"
+
+          echo "=== [7/7] Verifying ==="
+          "$AAPT2" dump badging "$OUT/$APK_NAME" | head -1
+          "$APKSIGNER" verify --print-certs "$OUT/$APK_NAME" | grep -i "SHA-256" | head -1
+          echo "APK_NAME=$APK_NAME" >> "$GITHUB_ENV"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_NAME }}
+          path: /tmp/zyne-iptv-out/${{ env.APK_NAME }}
+          if-no-files-found: error
