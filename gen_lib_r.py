@@ -8,8 +8,8 @@ because the prebuilt classes.jar bytecode reads them via field access).
 """
 import os, re, sys, xml.etree.ElementTree as ET
 
-OUT = "/tmp/zyne-iptv-out"
-PROJ = os.path.expanduser("~/workspace/zyne-iptv")
+OUT = os.environ.get("ZYNE_OUT", "/tmp/zyne-iptv-out")
+PROJ = os.environ.get("ZYNE_PROJ", os.path.expanduser("~/workspace/zyne-iptv"))
 
 # ---- final merged symbols: (type, name) -> id / styleable children ----
 ids = {}            # (type, name) -> "0x..."
