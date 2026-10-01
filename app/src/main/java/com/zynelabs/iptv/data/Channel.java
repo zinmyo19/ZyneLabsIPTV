@@ -20,6 +20,9 @@ public class Channel {
     public int streamId = 0;
     public String container = "";
 
+    // Xtream catch-up/archive support (from get_live_streams: tv_archive)
+    public boolean archive = false;
+
     // Stalker portal extras (resolved to a fresh URL at play time)
     public String stalkerPortal = "";
     public String stalkerMac = "";
