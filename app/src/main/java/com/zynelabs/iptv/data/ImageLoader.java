@@ -32,8 +32,16 @@ public class ImageLoader {
         cache.evictAll();
     }
 
-    public static void load(final String url, final ImageView iv, final int placeholder) {        if (url == null || url.isEmpty()) {
-            iv.setImageResource(placeholder);
+    public static void load(final String url, final ImageView iv, final int placeholder) {
+        load(url, iv, placeholder == 0 ? null
+                : iv.getResources().getDrawable(placeholder, null));
+    }
+
+    /** Same, with a Drawable placeholder (e.g. per-category fallback art). */
+    public static void load(final String url, final ImageView iv,
+                            final android.graphics.drawable.Drawable placeholder) {
+        if (url == null || url.isEmpty()) {
+            iv.setImageDrawable(placeholder);
             iv.setTag(null);
             return;
         }
@@ -43,7 +51,7 @@ public class ImageLoader {
             iv.setImageBitmap(hit);
             return;
         }
-        iv.setImageResource(placeholder);
+        iv.setImageDrawable(placeholder);
         pool.execute(new Runnable() {
             @Override public void run() {
                 final Bitmap bmp = fetch(url);
@@ -52,7 +60,7 @@ public class ImageLoader {
                     @Override public void run() {
                         if (url.equals(iv.getTag())) {
                             if (bmp != null) iv.setImageBitmap(bmp);
-                            else iv.setImageResource(placeholder);
+                            else iv.setImageDrawable(placeholder);
                         }
                     }
                 });
