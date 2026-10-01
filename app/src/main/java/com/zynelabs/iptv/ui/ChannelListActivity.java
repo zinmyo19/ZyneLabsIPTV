@@ -218,14 +218,14 @@ public class ChannelListActivity extends Activity {
 
     private String screenTitle() {
         String t = getIntent().getStringExtra("title");
-        if (t != null && !t.isEmpty()) return t;
-        if (favOnly) return "★ Favorites";
-        if (recentMode) return "🕘 Recently Watched";
-        if (radioOnly) return "📻 Radio";
-        if (catFilter != null) return catFilter;
+        if (t != null && !t.isEmpty()) return Ui.stripEmoji(t);
+        if (favOnly) return "Favorites";
+        if (recentMode) return "Recently Watched";
+        if (radioOnly) return "Radio";
+        if (catFilter != null) return Ui.stripEmoji(catFilter);
         if (groupFilter != null) return "Channels";
-        return tab == Channel.VOD ? "🎬 Movies"
-                : tab == Channel.SERIES ? "📼 Series" : "📺 Live TV";
+        return tab == Channel.VOD ? "Movies"
+                : tab == Channel.SERIES ? "Series" : "Live TV";
     }
 
     // ---------------- data ----------------
@@ -453,9 +453,9 @@ public class ChannelListActivity extends Activity {
     private void dlgChannelOptions(final Channel c) {
         final boolean fav = store.isFav(acc.id, c.key);
         final String[] items = new String[]{
-                fav ? "★ Remove from favorites" : "☆ Add to favorites",
-                "✏️ Rename channel",
-                "🙈 Hide channel",
+                fav ? "Remove from favorites" : "Add to favorites",
+                "Rename channel",
+                "Hide channel",
         };
         new AlertDialog.Builder(this)
                 .setTitle(dispName(c))
@@ -486,7 +486,7 @@ public class ChannelListActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
         new AlertDialog.Builder(this)
-                .setTitle("✏️ Rename channel")
+                .setTitle("Rename channel")
                 .setView(wrap)
                 .setPositiveButton("Save", new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
@@ -508,7 +508,7 @@ public class ChannelListActivity extends Activity {
 
     private void dlgHideChannel(final Channel c) {
         new AlertDialog.Builder(this)
-                .setTitle("🙈 Hide channel")
+                .setTitle("Hide channel")
                 .setMessage("Hide \"" + dispName(c) + "\" from the list?\n\n"
                         + "You can bring it back any time in\nSettings → Channel manager.")
                 .setPositiveButton("Hide", new DialogInterface.OnClickListener() {
