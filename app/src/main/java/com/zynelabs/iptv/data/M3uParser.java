@@ -4,16 +4,19 @@ import java.io.BufferedReader;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /** Minimal M3U / M3U8 playlist parser (EXTINF). */
 public class M3uParser {
 
     private static String attr(String line, String name) {
-        Pattern p = Pattern.compile(Pattern.quote(name) + "=\"([^\"]*)\"");
-        Matcher m = p.matcher(line);
-        return m.find() ? m.group(1) : "";
+        // indexOf-based: Pattern.compile per line was a major slowdown
+        // (100k+ compiles on giant playlists) and churned memory.
+        String key = name + "=\"";
+        int i = line.indexOf(key);
+        if (i < 0) return "";
+        int s = i + key.length();
+        int e = line.indexOf('"', s);
+        return e < 0 ? "" : line.substring(s, e);
     }
 
     private static final String[] VOD_EXTS = {
@@ -36,9 +39,35 @@ public class M3uParser {
     }
 
     public static List<Channel> parse(String text) {
+        return parse(text, null);
+    }
+
+    /** Parses from a String (kept for small inputs); giant playlists should
+     * use parse(BufferedReader, …) so the whole file is never one String. */
+    public static List<Channel> parse(String text, CountListener cl) {
+        BufferedReader br = new BufferedReader(new StringReader(text));
+        try {
+            List<Channel> out = parse(br, cl);
+            br.close();
+            return out;
+        } catch (Exception e) {
+            return new ArrayList<Channel>();
+        }
+    }
+
+    /**
+     * Streaming parse: reads line-by-line from the reader, so a 100k-entry
+     * playlist never sits in memory as one giant String. Callers must close
+     * the reader.
+     */
+    /** Progress callback for huge playlists (called every 2000 channels). */
+    public interface CountListener {
+        void onCount(int n);
+    }
+
+    public static List<Channel> parse(BufferedReader br, CountListener cl) {
         List<Channel> out = new ArrayList<>();
         try {
-            BufferedReader br = new BufferedReader(new StringReader(text));
             String line;
             String pendingName = null, pendingLogo = "", pendingGroup = "";
             int n = 0;
@@ -66,6 +95,7 @@ public class M3uParser {
                     c.url = line;
                     out.add(c);
                     pendingName = null;
+                    if (cl != null && out.size() % 2000 == 0) cl.onCount(out.size());
                 }
             }
             br.close();
