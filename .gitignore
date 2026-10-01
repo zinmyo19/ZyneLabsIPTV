@@ -1,0 +1,12 @@
+# local build outputs
+out/
+*.apk
+*.ap_
+*.dex
+# keystores must NEVER be committed (CI gets it via Actions secret)
+*.keystore
+*.jks
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*~
