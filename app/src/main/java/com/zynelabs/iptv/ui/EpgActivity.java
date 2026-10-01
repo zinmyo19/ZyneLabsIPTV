@@ -21,6 +21,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.zynelabs.iptv.R;
+import com.zynelabs.iptv.data.XtreamClient;
 import com.zynelabs.iptv.data.Channel;
 import com.zynelabs.iptv.data.ChannelRepo;
 import com.zynelabs.iptv.data.ImageLoader;
@@ -83,6 +84,7 @@ public class EpgActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        Ui.applyTheme(this);
         acc = new Store(this).account(getIntent().getStringExtra("accountId"));
         if (acc == null) {
             Toast.makeText(this, "No playlist selected", Toast.LENGTH_SHORT).show();
@@ -131,7 +133,7 @@ public class EpgActivity extends Activity {
             @Override public void onClick(View v) { finish(); }
         });
         top.addView(back);
-        TextView title = Ui.label(this, "📅 TV Guide", 17, Ui.INK, true);
+        TextView title = Ui.label(this, "TV Guide", 17, Ui.INK, true);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         title.setLayoutParams(tlp);
@@ -144,12 +146,12 @@ public class EpgActivity extends Activity {
         clp.setMargins(Ui.dp(this, 8), 0, Ui.dp(this, 4), 0);
         clockText.setLayoutParams(clp);
         top.addView(clockText);
-        Button prev = Ui.circleBtn(this, "‹", 15);
+        Button prev = Ui.flatBtn(this, "‹", 15);
         prev.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { shift(-3); }
         });
         top.addView(prev);
-        Button next = Ui.circleBtn(this, "›", 15);
+        Button next = Ui.flatBtn(this, "›", 15);
         next.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { shift(3); }
         });
@@ -247,6 +249,7 @@ public class EpgActivity extends Activity {
         });
 
         setContentView(root);
+        Ui.enableTvFocus(root);
         body.setTag("body");
     }
 
@@ -345,6 +348,12 @@ public class EpgActivity extends Activity {
                 } else if (ev == XmlPullParser.END_TAG) {
                     String name = x.getName();
                     if ("programme".equals(name)) {
+                        if (cur != null) {
+                            // Some providers base64-encode xmltv titles/descs
+                            // just like the Xtream JSON API does.
+                            cur.title = XtreamClient.decodeMaybe(cur.title);
+                            cur.desc = XtreamClient.decodeMaybe(cur.desc);
+                        }
                         if (cur != null && cur.start > 0 && !cur.title.isEmpty()) {
                             List<Prog> list = guide.get(curChan);
                             if (list == null) {
@@ -440,7 +449,7 @@ public class EpgActivity extends Activity {
             ImageView iv = new ImageView(this);
             iv.setLayoutParams(new LinearLayout.LayoutParams(Ui.dp(this, 40), Ui.dp(this, 30)));
             iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            ImageLoader.load(c.logo, iv, R.drawable.ic_launcher);
+            ImageLoader.load(c.logo, iv, Ui.catArt(this, c));
             cell.addView(iv);
             TextView nm = Ui.label(this, c.name, 11, Ui.INK, false);
             nm.setMaxLines(2);
@@ -451,6 +460,8 @@ public class EpgActivity extends Activity {
             nm.setLayoutParams(nlp);
             cell.addView(nm);
             final String key = String.valueOf(c.streamId);
+            cell.setFocusable(true);
+            Ui.tvGlow(cell);
             cell.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) { playChannel(cidx); }
             });
@@ -490,6 +501,8 @@ public class EpgActivity extends Activity {
                     blp.leftMargin = x + Ui.dp(this, 1);
                     blp.topMargin = Ui.dp(this, 4);
                     blk.setLayoutParams(blp);
+                    blk.setFocusable(true);
+                    Ui.tvGlow(blk);
                     blk.setOnClickListener(new View.OnClickListener() {
                         @Override public void onClick(View v) { progDialog(c, cidx, pg); }
                     });
