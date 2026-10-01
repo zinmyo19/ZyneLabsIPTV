@@ -4,6 +4,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
@@ -48,6 +50,69 @@ public class XtreamClient {
         }
     }
 
+    /**
+     * Streams a URL to a file without holding the response in memory.
+     * For giant M3U playlists: download here, then parse incrementally
+     * from the file — the playlist never sits in the heap as one String.
+     */
+    public static void httpDownload(String urlStr, File out) throws Exception {
+        HttpURLConnection con = null;
+        try {
+            URL url = new URL(urlStr);
+            con = (HttpURLConnection) url.openConnection();
+            con.setConnectTimeout(15000);
+            con.setReadTimeout(60000);
+            con.setRequestProperty("User-Agent", "ZyneLabsIPTV/1.0");
+            InputStream in = con.getInputStream();
+            FileOutputStream fos = new FileOutputStream(out);
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
+            fos.close();
+            in.close();
+        } finally {
+            if (con != null) con.disconnect();
+        }
+    }
+
+    /**
+     * Xtream EPG title/description fields are base64-encoded (standard Xtream
+     * behavior), but some providers send plain text. Decodes when the text
+     * looks like base64 AND decodes to printable text; otherwise returns the
+     * input unchanged.
+     */
+    public static String decodeMaybe(String s) {
+        if (s == null || s.isEmpty()) return s;
+        String t = s.trim();
+        int n = t.length();
+        if (n == 0 || (n % 4) != 0) return s;
+        for (int i = 0; i < n; i++) {
+            char c = t.charAt(i);
+            boolean ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                    || (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=';
+            if (!ok) return s;
+        }
+        try {
+            byte[] b = android.util.Base64.decode(t, android.util.Base64.DEFAULT);
+            if (b.length == 0) return s;
+            // REPORT (not REPLACE): random bytes must fail, not turn into
+            // U+FFFD garbage that would pass the printability check.
+            java.nio.charset.CharsetDecoder dec =
+                    java.nio.charset.StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT);
+            String d = dec.decode(java.nio.ByteBuffer.wrap(b)).toString();
+            if (d.isEmpty()) return s;
+            for (int i = 0; i < d.length(); i++) {
+                char c = d.charAt(i);
+                if (c < 0x20 && c != '\n' && c != '\r' && c != '\t') return s;
+            }
+            return d;
+        } catch (Exception e) {
+            return s;
+        }
+    }
+
     private static String apiUrl(String server, String user, String pass, String action) {
         String b = normServer(server) + "/player_api.php?username=" + enc(user) + "&password=" + enc(pass);
         return action == null ? b : b + "&action=" + action;
@@ -59,6 +124,21 @@ public class XtreamClient {
         JSONObject ui = o.optJSONObject("user_info");
         if (ui != null && "1".equals(ui.optString("auth"))) return ui;
         return null;
+    }
+
+    /**
+     * Parse user_info.exp_date (Xtream: Unix timestamp in seconds).
+     * Returns epoch seconds, or 0 when unknown / unlimited
+     * (null, empty, or "0").
+     */
+    public static long parseExpDate(JSONObject userInfo) {
+        if (userInfo == null) return 0;
+        String s = userInfo.optString("exp_date", "").trim();
+        if (s.isEmpty() || "0".equals(s)) return 0;
+        try {
+            long v = Long.parseLong(s);
+            return v > 0 ? v : 0;
+        } catch (Exception e) { return 0; }
     }
 
     public static Map<Integer, String> categories(String server, String user, String pass, String action) {
@@ -94,6 +174,7 @@ public class XtreamClient {
                 c.user = user;
                 c.pass = pass;
                 c.streamId = id;
+                c.archive = o.optInt("tv_archive", 0) == 1; // catch-up support
                 out.add(c);
             }
         } catch (Exception ignored) {}
@@ -216,14 +297,14 @@ public class XtreamClient {
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject e = arr.getJSONObject(i);
                 Program p = new Program();
-                p.title = e.optString("title", "");
+                p.title = decodeMaybe(e.optString("title", ""));
                 p.start = e.optString("start", "");
                 p.stop = e.optString("stop", "");
                 if (p.start.isEmpty() && e.has("start_timestamp")) {
                     p.start = fmtTs(e.optLong("start_timestamp"));
                     p.stop = fmtTs(e.optLong("stop_timestamp"));
                 }
-                p.desc = e.optString("description", "");
+                p.desc = decodeMaybe(e.optString("description", ""));
                 if (!p.title.isEmpty()) out.add(p);
             }
         } catch (Exception ignored) {}
@@ -234,6 +315,52 @@ public class XtreamClient {
         try {
             java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
             return f.format(new java.util.Date(ts * 1000));
+        } catch (Exception e) { return ""; }
+    }
+
+    /** Full EPG table for catch-up (past + upcoming programs). Empty if unavailable. */
+    public static List<Program> catchupEpg(Channel c) {
+        List<Program> out = new ArrayList<>();
+        try {
+            if (c.server == null || c.server.isEmpty() || c.streamId == 0) return out;
+            String url = apiUrl(c.server, c.user, c.pass, "get_simple_data_table")
+                    + "&stream_id=" + c.streamId;
+            JSONObject o = new JSONObject(httpGet(url));
+            JSONArray arr = o.optJSONArray("epg_listings");
+            if (arr == null) return out;
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject e = arr.getJSONObject(i);
+                Program p = new Program();
+                p.title = decodeMaybe(e.optString("title", ""));
+                if (e.has("start_timestamp")) {
+                    p.start = fmtTs(e.optLong("start_timestamp"));
+                    p.stop = fmtTs(e.optLong("stop_timestamp"));
+                } else {
+                    p.start = e.optString("start", "");
+                    p.stop = e.optString("stop", "");
+                }
+                p.desc = decodeMaybe(e.optString("description", ""));
+                if (!p.title.isEmpty() && !p.start.isEmpty()) out.add(p);
+            }
+        } catch (Exception ignored) {}
+        return out;
+    }
+
+    /** Parse "yyyy-MM-dd HH:mm:ss" to epoch millis. -1 on failure. */
+    public static long parseEpgTime(String s) {
+        try {
+            java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            return f.parse(s).getTime();
+        } catch (Exception e) { return -1; }
+    }
+
+    /** Xtream timeshift (catch-up) stream URL for one program. */
+    public static String timeshiftUrl(Channel c, long startMs, long durMin) {
+        try {
+            java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("yyyy-MM-dd:HH-mm");
+            String start = f.format(new java.util.Date(startMs));
+            return normServer(c.server) + "/timeshift/" + enc(c.user) + "/"
+                    + enc(c.pass) + "/" + durMin + "/" + start + "/" + c.streamId + ".m3u8";
         } catch (Exception e) { return ""; }
     }
 }
