@@ -11,6 +11,7 @@ public class PlAccount {
     public String file;   // internal filename for m3u file
     public String server, user, pass; // xtream
     public String mac;    // stalker portal MAC
+    public long expDate;  // subscription expiry, epoch seconds; 0 = unknown/unlimited
 
     public PlAccount() {}
 
@@ -25,6 +26,7 @@ public class PlAccount {
         a.user = o.optString("user", "");
         a.pass = o.optString("pass", "");
         a.mac = o.optString("mac", "");
+        a.expDate = o.optLong("expDate", 0);
         return a;
     }
 
@@ -34,7 +36,7 @@ public class PlAccount {
             o.put("id", id); o.put("name", name); o.put("type", type);
             o.put("url", url); o.put("file", file);
             o.put("server", server); o.put("user", user); o.put("pass", pass);
-            o.put("mac", mac);
+            o.put("mac", mac); o.put("expDate", expDate);
         } catch (Exception ignored) {}
         return o;
     }
